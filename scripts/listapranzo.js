@@ -8,6 +8,8 @@
 //   hubot cancella ordine - Reinizializza l'ordine corrente
 //   hubot per me <ordine> [+ <ordine>] - Aggiunge <ordine> all'ordine dell'utente. Con "+ <ordine>" inserisce 2 ordini.
 //   hubot per me niente - Cancella il proprio ordine
+//   hubot develunch - Mostra la data del prossimo develunch
+//   hubot develunch [questa|prossima] settimana - Imposta il develunch per questa o la prossima settiman. Tinabot poi in automatico lo ri-programmerà ogni 2 venerdì.
 //   TB - hubot ha sempre voglia di TuttoBene!
 //
 // Notes:
@@ -17,6 +19,39 @@
 //   nolith, tommyblue
 
 module.exports = function (robot) {
+  var CronJob = require('cron').CronJob;
+
+  var reminder_job = new CronJob('00 45 11 * * 1,2,5', function() {
+      if (isDevelunch()) {
+        robot.messageRoom("cibo", "oggi c'è il develunch!");
+      } else {
+        robot.messageRoom("cibo", "ricordatevi di ordinare entro mezzogiorno.");
+      }
+    }, function () {
+      /* This function is executed when the job stops */
+    },
+    true, /* Start the job right now */
+    "Europe/Rome" /* Time zone of this job. */
+  );
+  reminder_job.start();
+
+  var develunch_job = new CronJob('00 00 13 * * 5', function() {
+      if (isDevelunch()) {
+        robot.messageRoom("cibo", "@here: *Develunch!!!111!*");
+
+        /* schedula il prossimo */
+        var develunch = robot.brain.get('develunch');
+        develunch.setDate(develunch.getDate() + 14); //setDate gestisce il wrap di mese
+        robot.brain.set('develunch', develunch);
+      }
+    }, function () {
+      /* This function is executed when the job stops */
+    },
+    true, /* Start the job right now */
+    "Europe/Rome" /* Time zone of this job. */
+  );
+  develunch_job.start();
+
   var initializeEmptyOrder = function () {
     return {
       timestamp: new Date(),
@@ -114,10 +149,57 @@ module.exports = function (robot) {
     msg.send('Se ordinate al TuttoBene posso aiutarvi io!');
   });
 
+  robot.respond(/develunch([\s\S]*)?/i, function (msg) {
+    var when = (msg.match[1] || '').trim();
+
+    if (when === '') {
+      var develunch = robot.brain.get('develunch') || null;
+      if (develunch === null) {
+        msg.reply('Develunch non impostato!');
+      } else {
+        msg.reply('Il develunch sarà ' + develunch.toDateString());
+      }
+      return;
+    }
+
+    var this_week = /(quest|oggi|domani|corrente|attual)/i.test(when);
+    var next_week = /(prossim|successiv|seguent)/i.test(when);
+    var now = new Date();
+    var friday_offset = 5 - now.getDay();
+
+    if (this_week && !next_week) {
+      friday_offset += 0;
+    } else if (next_week && !this_week) {
+      friday_offset += 7;
+    } else {
+      msg.reply('non riesco a capire quando sia il develunch... prova a dirlo in un altro modo!');  
+      return;
+    }
+
+    /* setDate() tiene conto anche del cambio mese/anno, anche se friday_offset è >31 o <0 */
+    now.setDate(now.getDate() + friday_offset);
+    var next_develunch = now;
+
+    msg.reply('Ok, develunch impostato per ' + next_develunch.toDateString());
+    robot.brain.set('develunch', next_develunch);
+  });
+
+  var isDevelunch = function() {
+    var tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    return !isNotToday(robot.brain.get('develunch') || tomorrow);
+  };
+
   robot.respond(/per me (.*)/i, function (msg) {
     var dish = msg.match[1].trim();
     var user = msg.message.user;
     var order = getOrder(msg);
+
+    if (isDevelunch()) {
+      msg.reply('Oggi c\è il develunch, niente ordini!');
+      return;
+    }
 
     if (dish === 'niente') {
       var oldDish = clearUserOrder(order, user);
