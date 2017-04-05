@@ -150,6 +150,27 @@ module.exports = function (robot) {
     msg.send('Se ordinate al TuttoBene posso aiutarvi io!');
   });
 
+  robot.respond(/remind([\s\S]*)?/i, function (msg) {
+    var state = (msg.match[1] || '').trim().toLowerCase();
+    var rem = (robot.brain.get('reminder') || []);
+    var usr = msg.message.user;
+
+    if (state === '') {
+      state = rem[usr] || false;
+    } else if (state === 'on') {
+      state = true;
+    } else if (state === 'off') {
+      state = false;
+    } else {
+      msg.reply('non capisco, puoi usare solo on/off.');
+      return;
+    }
+
+    rem[usr] = state;
+    msg.reply('reminder dopo pranzo: ' + (state ? 'attivato' : 'disattivato'));
+    robot.brain.set('reminder', rem);
+  });
+
   robot.respond(/develunch([\s\S]*)?/i, function (msg) {
     var when = (msg.match[1] || '').trim();
 
